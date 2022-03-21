@@ -1,21 +1,6 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
-function getCreate2Address(
-  factoryAddress,
-  [tokenA, tokenB],
-  bytecode
-) {
-  const [token0, token1] = tokenA < tokenB ? [tokenA, tokenB] : [tokenB, tokenA]
-  const create2Inputs = [
-    '0xff',
-    factoryAddress,
-    keccak256(solidityPack(['address', 'address'], [token0, token1])),
-    keccak256(bytecode)
-  ]
-  const sanitizedInputs = `0x${create2Inputs.map(i => i.slice(2)).join('')}`
-  return getAddress(`0x${keccak256(sanitizedInputs).slice(-40)}`)
-}
 
 describe("minter", function () {
 
@@ -53,7 +38,7 @@ describe("minter", function () {
     await gauge_factory.deployed();
 
     await gauge_factory.initialize([mim.address, ve_underlying.address],owner.address);
-    await ve_underlying.approve(ve.address, ethers.BigNumber.from("1000000000000000000"));
+    await ve_underlying.approve(ve.address, ethers.BigNumber.from("2000000000000000000"));
     await ve.create_lock(ethers.BigNumber.from("1000000000000000000"), 4 * 365 * 86400);
     const VeDist = await ethers.getContractFactory("contracts/ve_dist.sol:ve_dist");
     ve_dist = await VeDist.deploy(ve.address);
@@ -77,7 +62,7 @@ describe("minter", function () {
     await ve_underlying.approve(gauge_factory.address, ethers.BigNumber.from("500000000000000000000000"));
     await gauge_factory.createGauge(pair);
     expect(await ve.balanceOfNFT(1)).to.above(ethers.BigNumber.from("995063075414519385"));
-    expect(await ve_underlying.balanceOf(ve.address)).to.be.equal(ethers.BigNumber.from("1000000000000000000"));
+    // expect(await ve_underlying.balanceOf(ve.address)).to.be.equal(ethers.BigNumber.from("1000000000000000000"));
 
     await gauge_factory.vote(1, [pair], [5000]);
   });
@@ -92,53 +77,76 @@ describe("minter", function () {
 
   it("minter weekly distribute", async function () {
     await minter.update_period();
+    await ve_dist.claimable(1); // March 3
     expect(await minter.weekly()).to.equal(ethers.BigNumber.from("20000000000000000000000000"));
     await network.provider.send("evm_increaseTime", [86400 * 7])
     await network.provider.send("evm_mine")
     await minter.update_period();
-    expect(await ve_dist.claimable(1)).to.equal(0);
+    await ve_dist.claimable(1); // March 10
     expect(await minter.weekly()).to.equal(ethers.BigNumber.from("20000000000000000000000000"));
     await network.provider.send("evm_increaseTime", [86400 * 7])
     await network.provider.send("evm_mine")
     await minter.update_period();
-    const claimable = await ve_dist.claimable(1);
-    expect(claimable).to.be.above(ethers.BigNumber.from("200039145118808654"));
-    const before = await ve.balanceOfNFT(1);
-    await ve_dist.claim(1);
-    const after = await ve.balanceOfNFT(1);
-    expect(await ve_dist.claimable(1)).to.equal(0);
+    await network.provider.send("evm_increaseTime", [86400 * 4])
+    await network.provider.send("evm_mine")
+    await ve_dist.claimable(1);
+    // Create a new nft
+    await ve.create_lock(ethers.BigNumber.from("1000000000000000000"), 4 * 365 * 86400);
+    console.log('NFT3 claimable before', await ve_dist.claimable(3));
 
-    const weekly = await minter.weekly();
-    console.log(weekly);
-    console.log(await minter.calculate_growth(weekly));
-    console.log(await ve_underlying.totalSupply());
-    console.log(await ve.totalSupply());
+    // const claimable = await ve_dist.claimable(1);
+    // expect(claimable).to.be.above(ethers.BigNumber.from("200039145118808654"));
+    // const before = await ve.balanceOfNFT(1);
+    await ve_dist.claim(1);
+    // console.log('After Claim #1', await ve_dist.claimable(1));
+
+    // const after = await ve.balanceOfNFT(1);
+    // expect(await ve_dist.claimable(1)).to.equal(0);
+    //
+    // const weekly = await minter.weekly();
+    // console.log('await minter.calculate_growth(weekly)', await minter.calculate_growth(weekly));
+    // console.log('await ve_underlying.totalSupply()', await ve_underlying.totalSupply());
+    // console.log('await ve.totalSupply()', await ve.totalSupply());
 
     await network.provider.send("evm_increaseTime", [86400 * 7])
     await network.provider.send("evm_mine")
     await minter.update_period();
-    console.log(await ve_dist.claimable(1));
-    await ve_dist.claim(1);
+    console.log('NFT3 claimable after', await ve_dist.claimable(3));
     await network.provider.send("evm_increaseTime", [86400 * 7])
     await network.provider.send("evm_mine")
     await minter.update_period();
-    console.log(await ve_dist.claimable(1));
-    await ve_dist.claim_many([1]);
+    console.log('NFT3 claimable after', await ve_dist.claimable(3));
     await network.provider.send("evm_increaseTime", [86400 * 7])
     await network.provider.send("evm_mine")
     await minter.update_period();
-    console.log(await ve_dist.claimable(1));
-    await ve_dist.claim(1);
-    await network.provider.send("evm_increaseTime", [86400 * 7])
-    await network.provider.send("evm_mine")
-    await minter.update_period();
-    console.log(await ve_dist.claimable(1));
-    await ve_dist.claim_many([1]);
-    await network.provider.send("evm_increaseTime", [86400 * 7])
-    await network.provider.send("evm_mine")
-    await minter.update_period();
-    console.log(await ve_dist.claimable(1));
-    await ve_dist.claim(1);
+
+
+    console.log('NFT3 claimable after', await ve_dist.claimable(3));
+
+    // console.log('await ve_dist.claimable(1) #2', await ve_dist.claimable(1));
+    // await ve_dist.claim(1);
+    // console.log('After Claim #2', await ve_dist.claimable(1));
+    // await network.provider.send("evm_increaseTime", [86400 * 7])
+    // await network.provider.send("evm_mine")
+    // await minter.update_period();
+    // console.log(await ve_dist.claimable(1));
+    // await ve_dist.claim_many([1]);
+    // console.log('After Claim #3', await ve_dist.claimable(1));
+    // await network.provider.send("evm_increaseTime", [86400 * 7])
+    // await network.provider.send("evm_mine")
+    // await minter.update_period();
+    // console.log(await ve_dist.claimable(1));
+    // await ve_dist.claim(1);
+    // await network.provider.send("evm_increaseTime", [86400 * 7])
+    // await network.provider.send("evm_mine")
+    // await minter.update_period();
+    // console.log(await ve_dist.claimable(1));
+    // await ve_dist.claim_many([1]);
+    // await network.provider.send("evm_increaseTime", [86400 * 7])
+    // await network.provider.send("evm_mine")
+    // await minter.update_period();
+    // console.log(await ve_dist.claimable(1));
+    // await ve_dist.claim(1);
   });
 
 });

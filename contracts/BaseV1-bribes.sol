@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.11;
-
+import "hardhat/console.sol";
 library Math {
     function max(uint a, uint b) internal pure returns (uint) {
         return a >= b ? a : b;
@@ -157,6 +157,7 @@ contract Bribe {
 
         uint lower = 0;
         uint upper = nCheckpoints - 1;
+        // Binary search to find the supply at timestamp
         while (upper > lower) {
             uint center = upper - (upper - lower) / 2; // ceil, avoiding overflow
             SupplyCheckpoint memory cp = supplyCheckpoints[center];
@@ -207,9 +208,11 @@ contract Bribe {
         uint _timestamp = block.timestamp;
         uint _nCheckPoints = numCheckpoints[tokenId];
 
+        // If its the same time, just write to the latest checkpoint
         if (_nCheckPoints > 0 && checkpoints[tokenId][_nCheckPoints - 1].timestamp == _timestamp) {
             checkpoints[tokenId][_nCheckPoints - 1].balanceOf = balance;
         } else {
+            // Add a new checkpoint
             checkpoints[tokenId][_nCheckPoints] = Checkpoint(_timestamp, balance);
             numCheckpoints[tokenId] = _nCheckPoints + 1;
         }

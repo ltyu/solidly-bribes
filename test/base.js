@@ -18,7 +18,6 @@ function getCreate2Address(
 }
 
 describe("core", function () {
-
   let token;
   let ust;
   let mim;
@@ -46,7 +45,7 @@ describe("core", function () {
   let owner2;
   let owner3;
 
-  it("deploy base coins", async function () {
+  beforeEach("deploy base coins", async function () {
     [owner, owner2, owner3] = await ethers.getSigners(3);
     token = await ethers.getContractFactory("Token");
     ust = await token.deploy('ust', 'ust', 6, owner.address);

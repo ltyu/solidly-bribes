@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
+import "hardhat/console.sol";
 
 
 interface IERC20 {
@@ -96,6 +97,9 @@ contract StakingRewards {
 
     function notifyRewardAmount(uint256 reward) external updateReward(address(0)) {
         require(rewardsToken.transferFrom(msg.sender, address(this), reward));
+        console.log(rewardRate);
+        console.logUint(block.timestamp);
+        console.logUint(periodFinish);
         if (block.timestamp >= periodFinish) {
             rewardRate = reward / rewardsDuration;
         } else {
@@ -105,6 +109,6 @@ contract StakingRewards {
         }
 
         lastUpdateTime = block.timestamp;
-        periodFinish = block.timestamp + rewardsDuration;
+        periodFinish = block.timestamp + rewardsDuration; // 7 days
     }
 }

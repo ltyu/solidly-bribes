@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.11;
+import "hardhat/console.sol";
 
 library Math {
     function min(uint a, uint b) internal pure returns (uint) {
@@ -173,6 +174,7 @@ contract BaseV1Voter {
     function _vote(uint _tokenId, address[] memory _poolVote, int256[] memory _weights) internal {
         _reset(_tokenId);
         uint _poolCnt = _poolVote.length;
+        
         int256 _weight = int256(ve(_ve).balanceOfNFT(_tokenId));
         int256 _totalVoteWeight = 0;
         int256 _totalWeight = 0;
@@ -181,19 +183,18 @@ contract BaseV1Voter {
         for (uint i = 0; i < _poolCnt; i++) {
             _totalVoteWeight += _weights[i] > 0 ? _weights[i] : -_weights[i];
         }
-
         for (uint i = 0; i < _poolCnt; i++) {
             address _pool = _poolVote[i];
             address _gauge = gauges[_pool];
-
             if (isGauge[_gauge]) {
-                int256 _poolWeight = _weights[i] * _weight / _totalVoteWeight;
+                
+                int256 _poolWeight = _weights[i] * _weight / _totalVoteWeight; // weight of current vote * balanceNFT / total of _weights
                 require(votes[_tokenId][_pool] == 0);
-                require(_poolWeight != 0);
+                require(_poolWeight != 0);    
                 _updateFor(_gauge);
 
                 poolVote[_tokenId].push(_pool);
-
+                
                 weights[_pool] += _poolWeight;
                 votes[_tokenId][_pool] += _poolWeight;
                 if (_poolWeight > 0) {
@@ -214,6 +215,7 @@ contract BaseV1Voter {
     function vote(uint tokenId, address[] calldata _poolVote, int256[] calldata _weights) external {
         require(ve(_ve).isApprovedOrOwner(msg.sender, tokenId));
         require(_poolVote.length == _weights.length);
+        
         _vote(tokenId, _poolVote, _weights);
     }
 

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity 0.8.11;
+import "hardhat/console.sol";
 
 /*
 
@@ -148,7 +149,7 @@ contract ve_dist {
         return _min;
     }
 
-    function _find_timestamp_user_epoch(address ve, uint tokenId, uint _timestamp, uint max_user_epoch) internal view returns (uint) {
+    function _find_timestamp_user_epoch(address ve, uint tokenId, uint _timestamp, uint max_user_epoch) public view returns (uint) {
         uint _min = 0;
         uint _max = max_user_epoch;
         for (uint i = 0; i < 128; i++) {
@@ -261,7 +262,7 @@ contract ve_dist {
         uint to_distribute = 0;
 
         uint max_user_epoch = VotingEscrow(ve).user_point_epoch(_tokenId);
-        uint _start_time = start_time;
+        uint _start_time = start_time; // Blockstamp r
 
         if (max_user_epoch == 0) return 0;
 

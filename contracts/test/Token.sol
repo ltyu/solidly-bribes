@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity 0.8.11;
+import "hardhat/console.sol";
 
 contract Token {
 
@@ -80,7 +81,7 @@ contract Token {
         return balanceOf[account];
     }
 
-    function claimFees() external returns (uint, uint) {
+    function claimFees() external pure returns (uint, uint) {
         return (0,0);
     }
 
@@ -95,7 +96,7 @@ contract Token {
         address _from,
         address _to,
         uint256 _value
-    ) internal returns (bool) {
+    ) internal returns (bool) {        
         balanceOf[_from] -= _value;
         balanceOf[_to] += _value;
         emit Transfer(_from, _to, _value);

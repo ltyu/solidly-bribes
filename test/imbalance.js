@@ -180,6 +180,7 @@ describe("imbalance", function () {
 
     await ve_underlying.approve(gauge_factory.address, ethers.BigNumber.from("500000000000000000000000"));
     await gauge_factory.createGauge(pair3.address);
+    
     expect(await gauge_factory.gauges(pair.address)).to.not.equal(0x0000000000000000000000000000000000000000);
 
     const gauge_address3 = await gauge_factory.gauges(pair3.address);

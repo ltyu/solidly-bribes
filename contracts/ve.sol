@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.11;
+import "hardhat/console.sol";
 
 /**
 @title Voting Escrow
@@ -677,7 +678,6 @@ contract ve is IERC721, IERC721Metadata {
         bytes memory _data
     ) public {
         _transferFrom(_from, _to, _tokenId, msg.sender);
-
         if (_isContract(_to)) {
             // Throws if transfer destination is a contract which does not implement 'onERC721Received'
             try IERC721Receiver(_to).onERC721Received(msg.sender, _from, _tokenId, _data) returns (bytes4) {} catch (
@@ -1019,7 +1019,6 @@ contract ve is IERC721, IERC721Metadata {
         require(_value > 0); // dev: need non-zero value
         require(unlock_time > block.timestamp, 'Can only lock until time in the future');
         require(unlock_time <= block.timestamp + MAXTIME, 'Voting lock can be 4 years max');
-
         ++tokenId;
         uint _tokenId = tokenId;
         _mint(_to, _tokenId);
