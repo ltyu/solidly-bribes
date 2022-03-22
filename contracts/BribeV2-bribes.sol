@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.11;
-import "hardhat/console.sol";
 
 library Math {
     function max(uint a, uint b) internal pure returns (uint) {
@@ -32,7 +31,7 @@ contract V2Bribe {
     uint public constant DURATION = 7 days; // rewards are released over 7 days
     uint public constant PRECISION = 10 ** 18;
 
-    address public immutable _v2voter; // only voter can modify balances (since it only happens on vote())
+    address public immutable _v2Voter; // only voter can modify balances (since it only happens on vote())
     address public immutable _ve;
 
     // default snx staking contract implementation
@@ -85,9 +84,9 @@ contract V2Bribe {
     event NotifyReward(address indexed from, address indexed reward, uint amount);
     event ClaimRewards(address indexed from, address indexed reward, uint amount);
 
-    constructor(address __v2voter) {
-        _v2voter = __v2voter;
-        _ve = IV2Voter(_v2voter)._ve();
+    constructor(address __v2Voter) {
+        _v2Voter = __v2Voter;
+        _ve = IV2Voter(_v2Voter)._ve();
     }
 
     // simple re-entrancy check
@@ -193,9 +192,9 @@ contract V2Bribe {
         }
     }
 
-    // This is an external function, but internal notation is used since it can only be called "internally" from Voter
+    // This is an external function, but internal notation is used since it can only be called "internally" from V2Voter
     function _deposit(uint amount, uint tokenId) external {
-        require(msg.sender == _v2voter);
+        require(msg.sender == _v2Voter, 'Not Authorized');
         totalSupply += amount;
         balanceOf[tokenId] += amount;
 
@@ -205,9 +204,9 @@ contract V2Bribe {
         emit Deposit(msg.sender, tokenId, amount);
     }
 
-    // This is an external function, but internal notation is used since it can only be called "internally" from Voter
+    // This is an external function, but internal notation is used since it can only be called "internally" from V2Voter
     function _withdraw(uint amount, uint tokenId) external {
-        require(msg.sender == _v2voter);
+        require(msg.sender == _v2Voter, 'Not Authorized');
         totalSupply -= amount;
         balanceOf[tokenId] -= amount;
 
@@ -218,20 +217,21 @@ contract V2Bribe {
     }
     
     /*
-        Allows the rewards to be claimed. Can only be run by V2Voter
+        Claims rewards on behalf of the owner. Can only be run by V2Voter
+        This is an external function, but internal notation is used since it can only be called "internally" from Voter
      */
-    function getReward(uint tokenId, address[] memory tokens) external lock  {
-        // TODO require the msg.sender to be v2.voter
-        require(ve(_ve).isApprovedOrOwner(msg.sender, tokenId));
+    function _getRewardsForOwner(uint tokenId, address owner, address[] memory tokens) external lock  {
+        require(msg.sender == _v2Voter, 'Not Authorized');
+        require(ve(_ve).isApprovedOrOwner(msg.sender, tokenId), 'Not approved');
         for (uint i = 0; i < tokens.length; i++) {
             (rewardPerTokenStored[tokens[i]], lastUpdateTime[tokens[i]]) = _updateRewardPerToken(tokens[i]);
 
             uint _reward = earned(tokens[i], tokenId);
             lastEarn[tokens[i]][tokenId] = block.timestamp;
             userRewardPerTokenStored[tokens[i]][tokenId] = rewardPerTokenStored[tokens[i]];
-            if (_reward > 0) _safeTransfer(tokens[i], msg.sender, _reward);
+            if (_reward > 0) _safeTransfer(tokens[i], owner, _reward);
 
-            emit ClaimRewards(msg.sender, tokens[i], _reward);
+            emit ClaimRewards(owner, tokens[i], _reward);
         }
     }
 
@@ -357,7 +357,7 @@ contract V2Bribe {
         } else {
             uint _remaining = periodFinish[token] - block.timestamp;
             uint _left = _remaining * rewardRate[token];
-            require(amount > _left);
+            require(amount > _left, 'Amount greater than left');
             _safeTransferFrom(token, msg.sender, address(this), amount);
             rewardRate[token] = (amount + _left) / DURATION;
         }

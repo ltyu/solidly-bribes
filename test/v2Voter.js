@@ -1,6 +1,8 @@
 const { expect } = require('chai');
 const { ethers } = require('hardhat');
 
+const { DAY, fastForward } = require('./helpers');
+
 describe('V2Voter', () => {
   let Token; 
   let BaseV1Pair;
@@ -9,6 +11,7 @@ describe('V2Voter', () => {
   let ve;
   let underlyingToken;
   let owner;
+  let owner2;
   let rewardToken;
   let gaugeToken;
   let mim;
@@ -101,9 +104,10 @@ describe('V2Voter', () => {
   
   });
 
-  describe('Vote', () => {
+  describe('vote', () => {
     const weights = [150, 50];
     let poolVotes = [];
+    let tokenId;
     before(async () => {
       // Create a new pair
       const btc = await Token.deploy('BTC', 'BTC', 6, owner.address);
@@ -131,34 +135,117 @@ describe('V2Voter', () => {
       
       // Lock another VE
       await underlyingToken.connect(owner2).approve(ve.address, ethers.BigNumber.from('10000000000000000000000000'));
+      tokenId = await ve.connect(owner2).callStatic.create_lock(ethers.BigNumber.from('100000000000000000000000'), 4 * 365 * 86400);
       await ve.connect(owner2).create_lock(ethers.BigNumber.from('100000000000000000000000'), 4 * 365 * 86400);
       
       // Authroize, transfer, and vote
       await ve.connect(owner2).setApprovalForAll(v2Voter.address, true);
-      await v2Voter.connect(owner2).transferToProxy(2);
-      await v2Voter.connect(owner2).vote(2, poolVotes, weights); //owner2 can still vote
+      await v2Voter.connect(owner2).transferToProxy(tokenId);
+      await v2Voter.connect(owner2).vote(tokenId, poolVotes, weights); //owner2 can still vote on v2
     });
 
     it('should have sent the nft to the v2Vote contract', async () => {
-      expect(await ve.isApprovedOrOwner(v2Voter.address, 2)).to.equal(true);
-      expect(await ve.isApprovedOrOwner(owner2.address, 2)).to.equal(false);
+      expect(await ve.isApprovedOrOwner(v2Voter.address, tokenId)).to.equal(true);
+      expect(await ve.isApprovedOrOwner(owner2.address, tokenId)).to.equal(false);
     });
     
     it('should split votes between multiple pools', async () => {
       const firstV2Bribe = await (await ethers.getContractFactory('V2Bribe')).attach(firstV2BribeAddress);
       const secondV2Bribe = await (await ethers.getContractFactory('V2Bribe')).attach(secondV2BribeAddress);
-      expect(await firstV2Bribe.balanceOf(2) / await secondV2Bribe.balanceOf(2)).to.closeTo(weights[0] / weights[1], .1);
-      expect(await v2Voter.usedWeights(2)).to.closeTo((await ve.balanceOfNFT(2)), 1000);
-      expect(await voter.usedWeights(2)).to.closeTo((await ve.balanceOfNFT(2)), 1000);
+      expect(await firstV2Bribe.balanceOf(tokenId) / await secondV2Bribe.balanceOf(tokenId)).to.closeTo(weights[0] / weights[1], .1);
+      expect(await v2Voter.usedWeights(tokenId)).to.closeTo((await ve.balanceOfNFT(tokenId)), 1000);
+      expect(await voter.usedWeights(tokenId)).to.closeTo((await ve.balanceOfNFT(tokenId)), 1000);
     });
 
     it('should prevent voting by non-owners', async () => {
-      await expect(v2Voter.connect(owner).vote(2, poolVotes, weights)).to.be.revertedWith('Not NFT owner');
-      await expect(v2Voter.connect(owner).vote(3, poolVotes, weights)).to.be.revertedWith('Not NFT owner'); // Nft 3 does not exist
+      await expect(v2Voter.connect(owner).vote(tokenId, poolVotes, weights)).to.be.revertedWith('Not Authorized');
+      await expect(v2Voter.connect(owner).vote(tokenId + 100, poolVotes, weights)).to.be.revertedWith('Not Authorized');
     });
 
     it('should prevent an nft for voting more than once every 10 days', async () => {
-      await expect(v2Voter.connect(owner2).vote(2, poolVotes, weights)).to.be.revertedWith('At least 1 gauge has already been voted for'); //owner2 can still vote
+      await expect(v2Voter.connect(owner2).vote(tokenId, poolVotes, weights)).to.be.revertedWith('At least 1 gauge has already been voted for'); //owner2 can still vote
     });
+
+    it('should not allow the owner be able to vote on v1', async () => {
+      await expect(voter.connect(owner2).vote(tokenId, poolVotes, weights)).to.be.reverted;
+    });
+  });
+
+  describe('claim', () => {
+    let tokenId;
+    before(async () => {
+      // Lock another VE
+      await underlyingToken.connect(owner2).approve(ve.address, ethers.BigNumber.from('10000000000000000000000000'));
+      tokenId = await ve.connect(owner2).callStatic.create_lock(ethers.BigNumber.from('100000000000000000000000'), 4 * 365 * 86400);
+      await ve.connect(owner2).create_lock(ethers.BigNumber.from('100000000000000000000000'), 4 * 365 * 86400);
+      
+      // Authorize, transfer, and vote with VE
+      await ve.connect(owner2).setApprovalForAll(v2Voter.address, true);
+      await v2Voter.connect(owner2).transferToProxy(tokenId);
+      await v2Voter.connect(owner2).vote(tokenId, [firstPoolAddress], [150]); //owner2 can still vote
+
+      // Approve and notify bribe rewards
+      v2Bribe = await (await ethers.getContractFactory('V2Bribe')).attach(firstV2BribeAddress);
+      await underlyingToken.approve(v2Bribe.address, ethers.BigNumber.from('100000000000000000000000000'));
+      await v2Bribe.notifyRewardAmount(underlyingToken.address, ethers.BigNumber.from('700000000000000000000')) // 700
+    });
+
+    it('should be able to claim bribes', async () => {
+      const initialEarned = await v2Bribe.connect(owner2).earned(underlyingToken.address, tokenId);
+      expect(initialEarned).to.be.eq(0);
+
+      await fastForward(7*DAY);
+
+      const preClaimEarned = await v2Bribe.connect(owner2).earned(underlyingToken.address, tokenId);
+      expect(initialEarned).to.be.lt(preClaimEarned);
+      
+      const preClaimBalance = await underlyingToken.balanceOf(owner2.address);
+      await v2Voter.connect(owner2).claimBribes(tokenId, [underlyingToken.address]);
+      const postClaimBalance = await underlyingToken.balanceOf(owner2.address);
+      const postClaimEarned = await v2Bribe.connect(owner2).earned(underlyingToken.address, tokenId);
+      expect(postClaimEarned).to.eq(0);
+      expect(postClaimBalance).to.gt(preClaimBalance);
+    });
+
+    it('should only allow owners to claim', async () => {
+      await expect(v2Voter.connect(owner).claimBribes(tokenId, [underlyingToken.address])).to.revertedWith('Not Authorized');
+    });
+
+  });
+
+  describe('withdrawFromProxy', () => {
+    let tokenId;
+    before(async () => {
+      // Lock another VE
+      await underlyingToken.connect(owner2).approve(ve.address, ethers.BigNumber.from('10000000000000000000000000'));
+      tokenId = await ve.connect(owner2).callStatic.create_lock(ethers.BigNumber.from('100000000000000000000000'), 4 * 365 * 86400);
+      await ve.connect(owner2).create_lock(ethers.BigNumber.from('100000000000000000000000'), 4 * 365 * 86400);
+      
+      // Authorize, transfer, and vote with VE
+      await ve.connect(owner2).setApprovalForAll(v2Voter.address, true);
+      await v2Voter.connect(owner2).transferToProxy(tokenId);
+      await v2Voter.connect(owner2).vote(tokenId, [firstPoolAddress], [150]); //owner2 can still vote
+
+      // Approve and notify bribe rewards
+      v2Bribe = await (await ethers.getContractFactory('V2Bribe')).attach(firstV2BribeAddress);
+      await underlyingToken.approve(v2Bribe.address, ethers.BigNumber.from('100000000000000000000000000'));
+      await v2Bribe.notifyRewardAmount(underlyingToken.address, ethers.BigNumber.from('700000000000000000000')) // 700
+    });
+
+    it('should only allow the owner to withdraw', async () => {
+      await expect(v2Voter.connect(owner).withdrawFromProxy(tokenId)).to.be.revertedWith('Not Authorized');
+    });
+
+    it('should be able to withdraw an NFT after votes are reset', async () => {
+      await v2Voter.connect(owner2).reset(tokenId);
+      await v2Voter.connect(owner2).withdrawFromProxy(tokenId);
+
+      expect(await ve.isApprovedOrOwner(v2Voter.address, tokenId)).to.be.equal(true);
+      expect(await ve.isApprovedOrOwner(owner2.address, tokenId)).to.be.equal(true);
+      expect(await v2Voter.nftOwner(tokenId)).to.equal(ethers.constants.AddressZero);
+      await expect(v2Voter.connect(owner2).claimBribes(tokenId, [underlyingToken.address])).to.revertedWith('Not Authorized');
+
+    });
+
   });
 });
