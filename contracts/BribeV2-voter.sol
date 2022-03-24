@@ -255,6 +255,7 @@ contract V2Voter is IERC721Receiver {
     */
     function createBribe(address _gauge) external lock returns (address) {
         require(IV1Voter(_v1Voter).isGauge(_gauge), 'Gauge does not exist');
+        // TODO Check that a V2Bribe hasnt been created for the gauge yet
         address _pool = IV1Voter(_v1Voter).poolForGauge(_gauge);
         address _bribe = IV2BribeFactory(_v2BribeFactory).createBribe();
         bribes[_gauge] = _bribe;
