@@ -70,8 +70,8 @@ contract V2Voter is IERC721Receiver {
     // all pools available for incentives 
     address[] public pools; 
 
-    // Last vote time for each gauge address
-    mapping(uint => mapping(address => uint256)) public lastUserVote;
+    // Last vote time
+    mapping(uint => uint256) public lastUserVote;
 
     // Map from nft id to pools addresses. Keeps track of what pools an nft voted for
     mapping(uint => address[]) public poolVote; 
@@ -156,7 +156,6 @@ contract V2Voter is IERC721Receiver {
         for (uint i = 0; i < _poolCnt; i++) {
             address _pool = _poolVote[i];
             address _gauge = IV1Voter(_v1Voter).gauges(_pool);
-            require(block.timestamp >= lastUserVote[_tokenId][_gauge] + VoteDelay, 'At least 1 gauge has already been voted for');
             if (IV1Voter(_v1Voter).isGauge(_gauge)) {
                 
                 int256 _poolWeight = _weights[i] * _weight / _totalVoteWeight; // weight of current vote * balanceNFT / total of _weights
@@ -177,14 +176,14 @@ contract V2Voter is IERC721Receiver {
                 _usedWeight += _poolWeight;
                 _totalWeight += _poolWeight;
                 
-                // Record the last voting time
-                lastUserVote[_tokenId][_gauge] = block.timestamp;
                 emit Voted(msg.sender, _tokenId, _poolWeight);
             }
         }
         
         totalWeight += uint256(_totalWeight);
         usedWeights[_tokenId] = uint256(_usedWeight);
+        // Record the last voting time
+        lastUserVote[_tokenId] = block.timestamp;
     }
 
     /**
@@ -222,6 +221,7 @@ contract V2Voter is IERC721Receiver {
     */
     function reset(uint _tokenId) external lock {
         require(nftOwner[_tokenId] == msg.sender, 'Not Authorized');
+        require(block.timestamp >= lastUserVote[_tokenId] + VoteDelay, 'Too early to change votes');
         _reset(_tokenId);
         IV1Voter(_v1Voter).reset(_tokenId);
     }    
@@ -243,6 +243,7 @@ contract V2Voter is IERC721Receiver {
     function vote(uint _tokenId, address[] calldata _poolVote, int256[] calldata _weights) external lock {
         require(nftOwner[_tokenId] == msg.sender, 'Not Authorized');
         require(_poolVote.length == _weights.length, 'Invalid vote params');
+        require(block.timestamp >= lastUserVote[_tokenId] + VoteDelay, 'Too early to change votes');
         _vote(_tokenId, _poolVote, _weights);
         IV1Voter(_v1Voter).vote(_tokenId, _poolVote, _weights); 
     }
@@ -270,6 +271,7 @@ contract V2Voter is IERC721Receiver {
     */
     function withdrawFromProxy(uint _tokenId) external lock {
         require(nftOwner[_tokenId] == msg.sender, 'Not Authorized');
+        require(block.timestamp >= lastUserVote[_tokenId] + VoteDelay, 'Too early to withdraw');
         IVe(_ve).safeTransferFrom(address(this), msg.sender, _tokenId);
         nftOwner[_tokenId] = address(0);
         emit WithdrawNFT(_tokenId);
@@ -291,6 +293,9 @@ contract V2Voter is IERC721Receiver {
         emit BribesClaimed(_tokenId, _tokens);
     }
 
+    /**
+    *  @dev Required method for ERC721 safeTransfer validation
+    */
     function onERC721Received(address operator, address from, uint256 tokenId, bytes memory data) pure public returns (bytes4) {
         return this.onERC721Received.selector;
     }

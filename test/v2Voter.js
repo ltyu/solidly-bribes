@@ -104,6 +104,8 @@ describe('V2Voter', () => {
   
   });
 
+  
+
   describe('vote', () => {
     const weights = [150, 50];
     let poolVotes = [];
@@ -142,6 +144,16 @@ describe('V2Voter', () => {
       await ve.connect(owner2).setApprovalForAll(v2Voter.address, true);
       await v2Voter.connect(owner2).transferToProxy(tokenId);
       await v2Voter.connect(owner2).vote(tokenId, poolVotes, weights); //owner2 can still vote on v2
+    });
+
+    it('should vote a bunch of times', async () =>{ 
+      // for (let i = 0; i < 500; i++) {
+      //   voter.vote(tokenId, [firstPoolAddress], [1])
+      //   await network.provider.send("evm_increaseTime", [1]);
+      //   await network.provider.send("evm_mine");
+      // }
+
+      // console.log(await voter.estimateGas.claimBribes(tokenId, [underlyingToken.address]));
     });
 
     it('should have sent the nft to the v2Vote contract', async () => {
