@@ -1,17 +1,15 @@
 const { expect } = require('chai');
 const { ethers } = require('hardhat');
-
 const { DAY, fastForward } = require('./helpers');
 
 describe('V2Voter', () => {
+  let owner, owner2;
   let Token; 
   let BaseV1Pair;
   let core;
   let voter;
   let ve;
   let underlyingToken;
-  let owner;
-  let owner2;
   let rewardToken;
   let gaugeToken;
   let mim;
@@ -19,6 +17,7 @@ describe('V2Voter', () => {
   let v2Voter;
   let v2BribesFactory;
   let firstPoolAddress;
+  let firstV1Gauge;
 
   before(async () => {
     [owner, owner2] = await ethers.getSigners();
@@ -97,13 +96,16 @@ describe('V2Voter', () => {
 
     // Create a v2Bribe for the above firstPair
     // We assume a gauge has already been created on Solidly so we create and link a V2 bribe
-    const firstV1Gauge = await voter.gauges(firstPair.address);
+    firstV1Gauge = await voter.gauges(firstPair.address);
     await v2Voter.createBribe(firstV1Gauge);
     firstV2BribeAddress = await v2Voter.bribes(firstV1Gauge);
     expect(firstV2BribeAddress).to.equal(await v2BribesFactory.lastBribe());
   
   });
 
+  it('should only allow 1 bribe per contract', async () => {
+    await expect(v2Voter.createBribe(firstV1Gauge)).to.be.revertedWith('Bribe already exists');
+  });
   
 
   describe('vote', () => {
@@ -146,16 +148,6 @@ describe('V2Voter', () => {
       await v2Voter.connect(owner2).vote(tokenId, poolVotes, weights); //owner2 can still vote on v2
     });
 
-    it('should vote a bunch of times', async () =>{ 
-      // for (let i = 0; i < 500; i++) {
-      //   voter.vote(tokenId, [firstPoolAddress], [1])
-      //   await network.provider.send("evm_increaseTime", [1]);
-      //   await network.provider.send("evm_mine");
-      // }
-
-      // console.log(await voter.estimateGas.claimBribes(tokenId, [underlyingToken.address]));
-    });
-
     it('should have sent the nft to the v2Vote contract', async () => {
       expect(await ve.isApprovedOrOwner(v2Voter.address, tokenId)).to.equal(true);
       expect(await ve.isApprovedOrOwner(owner2.address, tokenId)).to.equal(false);
@@ -175,7 +167,7 @@ describe('V2Voter', () => {
     });
 
     it('should prevent an nft for voting more than once every 10 days', async () => {
-      await expect(v2Voter.connect(owner2).vote(tokenId, poolVotes, weights)).to.be.revertedWith('At least 1 gauge has already been voted for'); //owner2 can still vote
+      await expect(v2Voter.connect(owner2).vote(tokenId, poolVotes, weights)).to.be.revertedWith('Too early to change votes'); //owner2 can still vote
     });
 
     it('should not allow the owner be able to vote on v1', async () => {
@@ -249,6 +241,7 @@ describe('V2Voter', () => {
     });
 
     it('should be able to withdraw an NFT after votes are reset', async () => {
+      fastForward(10*DAY);
       await v2Voter.connect(owner2).reset(tokenId);
       await v2Voter.connect(owner2).withdrawFromProxy(tokenId);
 
@@ -259,5 +252,41 @@ describe('V2Voter', () => {
 
     });
 
+  });
+
+  describe('reset', () => {
+    let tokenId;
+    before(async () => {
+      // Lock another VE
+      await underlyingToken.connect(owner2).approve(ve.address, ethers.BigNumber.from('10000000000000000000000000'));
+      tokenId = await ve.connect(owner2).callStatic.create_lock(ethers.BigNumber.from('100000000000000000000000'), 4 * 365 * 86400);
+      await ve.connect(owner2).create_lock(ethers.BigNumber.from('100000000000000000000000'), 4 * 365 * 86400);
+      
+      // Authorize, transfer, and vote with VE
+      await ve.connect(owner2).setApprovalForAll(v2Voter.address, true);
+      await v2Voter.connect(owner2).transferToProxy(tokenId);
+      await v2Voter.connect(owner2).vote(tokenId, [firstPoolAddress], [150]); //owner2 can still vote
+
+      // Approve and notify bribe rewards
+      v2Bribe = await (await ethers.getContractFactory('V2Bribe')).attach(firstV2BribeAddress);
+      await underlyingToken.approve(v2Bribe.address, ethers.BigNumber.from('100000000000000000000000000'));
+      await v2Bribe.notifyRewardAmount(underlyingToken.address, ethers.BigNumber.from('700000000000000000000')) // 700
+    });
+
+    it('should require the vote delay to pass before resetting', async () => {
+      const usedWeights = await voter.connect(owner2).usedWeights(tokenId);
+      const v2UsedWeights = await v2Voter.connect(owner2).usedWeights(tokenId);
+      fastForward(7*DAY);
+      await expect(v2Voter.connect(owner2).reset(tokenId)).to.be.revertedWith('Too early to change votes');
+      fastForward(3*DAY);
+      await v2Voter.connect(owner2).reset(tokenId);
+      const postUsedWeights = await voter.connect(owner2).usedWeights(tokenId);
+      const v2PostUsedWeights = await v2Voter.connect(owner2).usedWeights(tokenId);
+
+      expect(usedWeights).to.eq(v2UsedWeights);
+      expect(postUsedWeights).to.eq(v2PostUsedWeights);
+      expect(postUsedWeights).to.eq(0);
+      expect(postUsedWeights).to.be.lt(usedWeights);
+    });
   });
 });

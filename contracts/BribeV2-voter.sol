@@ -229,10 +229,10 @@ contract V2Voter is IERC721Receiver {
     /**
     * @dev Transfers and tracks the nft to this contract. Need to be done before voting.
     */
-    function transferToProxy(uint tokenId) external lock {
-        require(IVe(_ve).isApprovedOrOwner(msg.sender, tokenId), 'Not Authorized');
-        IVe(_ve).safeTransferFrom(msg.sender, address(this), tokenId);
-        nftOwner[tokenId] = msg.sender;
+    function transferToProxy(uint _tokenId) external lock {
+        require(IVe(_ve).isApprovedOrOwner(msg.sender, _tokenId), 'Not Authorized');
+        IVe(_ve).safeTransferFrom(msg.sender, address(this), _tokenId);
+        nftOwner[_tokenId] = msg.sender;
     }
 
     /**
@@ -255,7 +255,7 @@ contract V2Voter is IERC721Receiver {
     */
     function createBribe(address _gauge) external lock returns (address) {
         require(IV1Voter(_v1Voter).isGauge(_gauge), 'Gauge does not exist');
-        // TODO Check that a V2Bribe hasnt been created for the gauge yet
+        require(bribes[_gauge] == address(0), 'Bribe already exists');
         address _pool = IV1Voter(_v1Voter).poolForGauge(_gauge);
         address _bribe = IV2BribeFactory(_v2BribeFactory).createBribe();
         bribes[_gauge] = _bribe;
