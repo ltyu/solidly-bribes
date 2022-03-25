@@ -88,10 +88,10 @@ contract V2Voter is IERC721Receiver {
     // Map from gauge to pool
     mapping(address => address) public poolForGauge;
 
-    // TODO Map from 
+    // Map from gauge address to supply index
     mapping(address => uint) internal supplyIndex;
 
-    // TODO Map from 
+    // Map from gauge address to amount claimable
     mapping(address => uint) public claimable;
 
     // Map from nft id to total used voting weight
