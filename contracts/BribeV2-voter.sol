@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.11;
-
+import './Pausable.sol';
 /**
 * @title ERC721 token receiver interface
 * @dev Interface for any contract that wants to support safeTransfers
@@ -55,7 +55,7 @@ interface IV2Bribe {
     function earned(address token, uint tokenId) external view returns (uint);
 }
 
-contract V2Voter is IERC721Receiver {
+contract V2Voter is Pausable, IERC721Receiver {
     address public immutable _ve;
     address public immutable _v1Voter;
     address public immutable _v2BribeFactory;
@@ -106,7 +106,7 @@ contract V2Voter is IERC721Receiver {
     event V2BribeCreated(address bribe);
     event WithdrawNFT(uint _tokenId);
 
-    constructor(address __ve, address __v1Voter, address __v2BribeFactory) {
+    constructor(address __ve, address __v1Voter, address __v2BribeFactory, address _owner) Owned(_owner) {
         _ve = __ve;
         _v1Voter = __v1Voter;
         _v2BribeFactory = __v2BribeFactory;
@@ -219,7 +219,7 @@ contract V2Voter is IERC721Receiver {
     /**
     * @dev Resets the votes on v1 and v2 Voter.
     */
-    function reset(uint _tokenId) external lock {
+    function reset(uint _tokenId) external lock notPaused {
         require(nftOwner[_tokenId] == msg.sender, 'Not Authorized');
         require(block.timestamp >= lastUserVote[_tokenId] + VoteDelay, 'Too early to change votes');
         _reset(_tokenId);
@@ -229,7 +229,7 @@ contract V2Voter is IERC721Receiver {
     /**
     * @dev Transfers and tracks the nft to this contract. Need to be done before voting.
     */
-    function transferToProxy(uint _tokenId) external lock {
+    function transferToProxy(uint _tokenId) external lock notPaused{
         require(IVe(_ve).isApprovedOrOwner(msg.sender, _tokenId), 'Not Authorized');
         IVe(_ve).safeTransferFrom(msg.sender, address(this), _tokenId);
         nftOwner[_tokenId] = msg.sender;
@@ -240,7 +240,7 @@ contract V2Voter is IERC721Receiver {
     * - Will revert if done by a non-owner
     * - Will revert if the poolVotes don't match the weights
     */
-    function vote(uint _tokenId, address[] calldata _poolVote, int256[] calldata _weights) external lock {
+    function vote(uint _tokenId, address[] calldata _poolVote, int256[] calldata _weights) external lock notPaused {
         require(nftOwner[_tokenId] == msg.sender, 'Not Authorized');
         require(_poolVote.length == _weights.length, 'Invalid vote params');
         require(block.timestamp >= lastUserVote[_tokenId] + VoteDelay, 'Too early to change votes');
@@ -253,7 +253,7 @@ contract V2Voter is IERC721Receiver {
     *  - Validates if a pool has a gauge created
     *  - Creates a new v2bribe
     */
-    function createBribe(address _gauge) external lock returns (address) {
+    function createBribe(address _gauge) external lock notPaused returns (address) {
         require(IV1Voter(_v1Voter).isGauge(_gauge), 'Gauge does not exist');
         require(bribes[_gauge] == address(0), 'Bribe already exists');
         address _pool = IV1Voter(_v1Voter).poolForGauge(_gauge);
@@ -270,7 +270,7 @@ contract V2Voter is IERC721Receiver {
     *  @dev Withdraws the NFT back to the owner
     *   - Votes needs to be reset before running
     */
-    function withdrawFromProxy(uint _tokenId) external lock {
+    function withdrawFromProxy(uint _tokenId) external lock notPaused {
         require(nftOwner[_tokenId] == msg.sender, 'Not Authorized');
         require(block.timestamp >= lastUserVote[_tokenId] + VoteDelay, 'Too early to withdraw');
         IVe(_ve).safeTransferFrom(address(this), msg.sender, _tokenId);
@@ -281,7 +281,7 @@ contract V2Voter is IERC721Receiver {
     /**
     *  @dev Claims bribes on behalf of the owner
     */
-    function claimBribes(uint _tokenId, address[] memory _tokens) public lock {
+    function claimBribes(uint _tokenId, address[] memory _tokens) public lock notPaused {
         require(nftOwner[_tokenId] == msg.sender, 'Not Authorized');
         uint _poolCnt = poolVote[_tokenId].length;
         address[] memory _poolVote = poolVote[_tokenId];

@@ -72,7 +72,7 @@ describe('V2Voter', () => {
 
     // Deploy V2Vote
     const V2Voter = await ethers.getContractFactory('V2Voter');
-    v2Voter = await V2Voter.deploy(ve.address, voter.address, v2BribesFactory.address);
+    v2Voter = await V2Voter.deploy(ve.address, voter.address, v2BribesFactory.address, owner.address);
     await v2Voter.deployed();
 
     await ve.setVoter(voter.address);
@@ -100,7 +100,13 @@ describe('V2Voter', () => {
     await v2Voter.createBribe(firstV1Gauge);
     firstV2BribeAddress = await v2Voter.bribes(firstV1Gauge);
     expect(firstV2BribeAddress).to.equal(await v2BribesFactory.lastBribe());
-  
+  });
+
+  it('should be able to pause V2Voter', async () => {
+    await expect(v2Voter.connect(owner2).setPaused(true)).to.be.revertedWith('Only the contract owner may perform this action');
+    await v2Voter.connect(owner).setPaused(true);
+    await expect(v2Voter.createBribe(firstV1Gauge)).to.be.revertedWith('This action cannot be performed while the contract is paused');
+    await v2Voter.connect(owner).setPaused(false);
   });
 
   it('should only allow 1 bribe per contract', async () => {
