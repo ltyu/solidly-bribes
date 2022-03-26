@@ -8,7 +8,7 @@ BribeV2-voter
 
 BribeV2-bribes
 * Modification of the original BaseV1-bribes contract
-* Used to add new rewards via notifyRewardAmount
+* Used to add rewards to an existing bribe via notifyRewardAmount
 * Used to keep track of how much veSolid holders earned when they withdraw
 * Drips rewards out throughout the week
 
