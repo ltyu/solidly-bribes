@@ -179,6 +179,13 @@ describe('V2Voter', () => {
     it('should not allow the owner be able to vote on v1', async () => {
       await expect(voter.connect(owner2).vote(tokenId, poolVotes, weights)).to.be.reverted;
     });
+
+    it('should keep track of the nft owners', async () => {
+      const nftBalance = await v2Voter.balanceOf(owner2.address);
+      expect(nftBalance).to.equal(1);
+      expect(await v2Voter.nftOwner(tokenId)).to.equal(owner2.address);
+      expect(await v2Voter.ownerToNFTokenIdList(owner2.address, nftBalance - 1)).to.equal(tokenId);
+    });
   });
 
   describe('claim', () => {
@@ -225,7 +232,7 @@ describe('V2Voter', () => {
 
   describe('withdrawFromProxy', () => {
     let tokenId;
-    before(async () => {
+    beforeEach(async () => {
       // Lock another VE
       await underlyingToken.connect(owner2).approve(ve.address, ethers.BigNumber.from('10000000000000000000000000'));
       tokenId = await ve.connect(owner2).callStatic.create_lock(ethers.BigNumber.from('100000000000000000000000'), 4 * 365 * 86400);
@@ -255,9 +262,19 @@ describe('V2Voter', () => {
       expect(await ve.isApprovedOrOwner(owner2.address, tokenId)).to.be.equal(true);
       expect(await v2Voter.nftOwner(tokenId)).to.equal(ethers.constants.AddressZero);
       await expect(v2Voter.connect(owner2).claimBribes(tokenId, [underlyingToken.address])).to.revertedWith('Not Authorized');
-
     });
 
+    it('should keep track of the nft owners', async () => {
+      fastForward(10*DAY);
+      await v2Voter.connect(owner2).reset(tokenId);
+      await v2Voter.connect(owner2).withdrawFromProxy(tokenId);
+
+      // should keep track of the nft owners
+      const nftBalance = await v2Voter.balanceOf(owner2.address);
+      expect(nftBalance).to.equal(nftBalance);
+      expect(await v2Voter.nftOwner(tokenId)).to.equal(ethers.constants.AddressZero);
+      expect(await v2Voter.ownerToNFTokenIdList(owner2.address, nftBalance)).to.equal(0);
+    });
   });
 
   describe('reset', () => {

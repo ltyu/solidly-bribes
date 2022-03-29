@@ -60,45 +60,57 @@ contract V2Voter is Pausable, IERC721Receiver {
     address public immutable _v1Voter;
     address public immutable _v2BribeFactory;
 
-    // Cannot change the vote more often than once every 10 days
+    /// @dev Cannot change the vote more often than once every 10 days
     uint public constant VoteDelay = 10 * 86400;
     uint internal index;
 
-    // total voting weight
+    /// @dev total voting weight
     uint public totalWeight;
 
-    // all pools available for incentives 
+    /// @dev all pools available for incentives 
     address[] public pools; 
 
-    // Last vote time
+    /// @dev Last vote time
     mapping(uint => uint256) public lastUserVote;
 
-    // Map from nft id to pools addresses. Keeps track of what pools an nft voted for
+    /// @dev Map from nft id to pools addresses. Keeps track of what pools an nft voted for
     mapping(uint => address[]) public poolVote; 
 
-    // Map from nft id to a pool to vote weight
+    /// @dev Map from nft id to a pool to vote weight
     mapping(uint => mapping(address => int256)) public votes;
 
-    // Map from a gauge address to bribe address
+    /// @dev Map from a gauge address to bribe address
     mapping(address => address) public bribes;
 
-    // Map from pool to vote weight
+    /// @dev Map from pool to vote weight
     mapping(address => int256) public weights;
 
-    // Map from gauge to pool
+    /// @dev Map from gauge to pool
     mapping(address => address) public poolForGauge;
 
-    // Map from gauge address to supply index
+    /// @dev Map from gauge address to supply index
     mapping(address => uint) internal supplyIndex;
 
-    // Map from gauge address to amount claimable
+    /// @dev Map from gauge address to amount claimable
     mapping(address => uint) public claimable;
 
-    // Map from nft id to total used voting weight
+    /// @dev Map from nft id to total used voting weight
     mapping(uint => uint) public usedWeights;
 
-    // Map from nft id to address of owner
+    /// @dev Map from nft id to address of owner
     mapping(uint => address) public nftOwner;
+
+    /// @dev Map from owner address to nft id
+    mapping(uint => address) public ownerNft;
+
+    /// @dev Map from owner address to count of their tokens. Mostly used for frontend view
+    mapping(address => uint) internal ownerToNFTokenCount;
+
+    /// @dev Map from owner address to indexed nft id. Mostly used for frontend view
+    mapping(address => mapping(uint => uint)) public ownerToNFTokenIdList;
+
+    /// @dev Map from a token Id to index. To be used with ownerToNFTokenIdList
+    mapping(uint => uint) internal tokenToListIndex;
 
     event Abstained(uint tokenId, int256 weight);
     event Voted(address indexed voter, uint tokenId, int256 weight);
@@ -215,6 +227,59 @@ contract V2Voter is Pausable, IERC721Receiver {
         usedWeights[_tokenId] = 0;
         delete poolVote[_tokenId];
     }
+
+    function _balance(address _owner) internal view returns (uint) {
+        return ownerToNFTokenCount[_owner];
+    }
+
+    function _incrementBalance(address _owner) internal { 
+        ownerToNFTokenCount[_owner]++;
+    }
+
+    function _decrementBalance(address _owner) internal { 
+        ownerToNFTokenCount[_owner]--;
+    }
+
+    function balanceOf(address _owner) external view returns (uint) {
+        return _balance(_owner);
+    }
+
+    /**
+    * @dev Add a NFT to an index mapping to a given address, and increase balance
+    */
+    function _addTokenToOwnerList(address _to, uint _tokenId) internal {
+        uint current_count = _balance(_to);
+
+        ownerToNFTokenIdList[_to][current_count] = _tokenId;
+        tokenToListIndex[_tokenId] = current_count;
+        _incrementBalance(_to);
+    }
+
+    /**
+    * @dev Remove a NFT from an index mapping to a given address
+    */
+    function _removeTokenFromOwnerList(address _from, uint _tokenId) internal {
+        uint currentCount = _balance(_from)-1;
+        uint currentIndex = tokenToListIndex[_tokenId];
+
+        // If last position
+        if (currentCount == currentIndex) {
+            ownerToNFTokenIdList[_from][currentCount] = 0;
+            tokenToListIndex[_tokenId] = 0;
+        } else {
+            uint lastTokenId = ownerToNFTokenIdList[_from][currentCount];
+
+            // Move the last item to current position
+            ownerToNFTokenIdList[_from][currentIndex] = lastTokenId;
+            tokenToListIndex[lastTokenId] = currentIndex;
+
+            // Delete last item
+            ownerToNFTokenIdList[_from][currentCount] = 0;
+            tokenToListIndex[_tokenId] = 0;
+        }
+
+        _decrementBalance(_from);
+    }
     
     /**
     * @dev Resets the votes on v1 and v2 Voter.
@@ -229,16 +294,18 @@ contract V2Voter is Pausable, IERC721Receiver {
     /**
     * @dev Transfers and tracks the nft to this contract. Need to be done before voting.
     */
-    function transferToProxy(uint _tokenId) external lock notPaused{
+    function transferToProxy(uint _tokenId) external lock notPaused {
         require(IVe(_ve).isApprovedOrOwner(msg.sender, _tokenId), 'Not Authorized');
         IVe(_ve).safeTransferFrom(msg.sender, address(this), _tokenId);
         nftOwner[_tokenId] = msg.sender;
+        _addTokenToOwnerList(msg.sender, _tokenId);
     }
 
     /**
     * @dev Initiates a proxy vote. It is assumed that the owner of the nft has already transferred it to this contract.
     * - Will revert if done by a non-owner
     * - Will revert if the poolVotes don't match the weights
+    * - Will revert if attempting to change the vote
     */
     function vote(uint _tokenId, address[] calldata _poolVote, int256[] calldata _weights) external lock notPaused {
         require(nftOwner[_tokenId] == msg.sender, 'Not Authorized');
@@ -275,6 +342,7 @@ contract V2Voter is Pausable, IERC721Receiver {
         require(block.timestamp >= lastUserVote[_tokenId] + VoteDelay, 'Too early to withdraw');
         IVe(_ve).safeTransferFrom(address(this), msg.sender, _tokenId);
         nftOwner[_tokenId] = address(0);
+        _removeTokenFromOwnerList(msg.sender, _tokenId);
         emit WithdrawNFT(_tokenId);
     }
 
