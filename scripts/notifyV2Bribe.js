@@ -1,11 +1,21 @@
 const { ethers } = require("hardhat");
 
 async function main() {
-  const [owner] = await ethers.getSigners();
-  const v2Voter = await (await ethers.getContractFactory('V2Voter')).attach('0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82');
-  const v2BribeAddress = await v2Voter.bribes("0x856e4424f806D16E8CBC702B3c0F2ede5468eae5");
-  await (await ethers.getContractFactory('V2Bribe')).attach(v2BribeAddress).approve(v2Bribe.address, ethers.BigNumber.from('10000000000000'));
-  await (await ethers.getContractFactory('V2Bribe')).attach(v2BribeAddress).notifyRewardAmount('0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512', 10000000000000);
+    const [owner, owner2] = await ethers.getSigners();
+    const Token = await ethers.getContractFactory('Token');
+    // Create and approve some token
+    ust = await Token.deploy('UST', 'UST', 6, owner.address);
+    mim = await Token.deploy('MIM', 'MIM', 6, owner.address);
+    await ust.mint(owner.address, ethers.BigNumber.from('1000000000000000000000000000000'));
+    await mim.mint(owner.address, ethers.BigNumber.from('1000000000000000000000000000000'));
+    const ust_1 = ethers.BigNumber.from('700000000000000000000');
+    const mim_1 = ethers.BigNumber.from('700000000000000000000');
+
+    const v2Bribe = await (await ethers.getContractFactory('V2Bribe')).attach('0x1F708C24a0D3A740cD47cC0444E9480899f3dA7D');
+    await mim.approve(v2Bribe.address, mim_1);
+    await ust.approve(v2Bribe.address, ust_1);
+    await v2Bribe.notifyRewardAmount(mim.address, mim_1) // 700
+    await v2Bribe.notifyRewardAmount(ust.address, ust_1) // 700
 }
 
 main()

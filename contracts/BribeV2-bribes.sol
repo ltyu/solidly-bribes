@@ -235,6 +235,10 @@ contract V2Bribe {
         }
     }
 
+    function rewardsListLength() external view returns (uint) {
+        return rewards.length;
+    }
+
     /**
     * @notice Determine the prior balance for an account as of a block number
     * @dev Block number must be a finalized block or else this function will revert to prevent misinformation.
