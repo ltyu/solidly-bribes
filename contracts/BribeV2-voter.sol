@@ -133,6 +133,18 @@ contract V2Voter is Pausable, IERC721Receiver {
         _unlocked = 1;
     }
 
+    // Checks if  current timestamp has surpassed the vote delay
+    modifier voteDelay(uint _tokenId) {
+        require(block.timestamp >= lastUserVote[_tokenId] + VoteDelay, 'Too early to change votes');
+        _;
+    }
+
+    // Checks if an nft has been deposited
+    modifier onlyDepositer(uint _tokenId) {
+        require(nftOwner[_tokenId] == msg.sender, 'Not Authorized');
+        _;
+    }
+
     function _updateFor(address _gauge) internal {
         address _pool = poolForGauge[_gauge];
         int256 _supplied = weights[_pool];
@@ -284,9 +296,7 @@ contract V2Voter is Pausable, IERC721Receiver {
     /**
     * @dev Resets the votes on v1 and v2 Voter.
     */
-    function reset(uint _tokenId) external lock notPaused {
-        require(nftOwner[_tokenId] == msg.sender, 'Not Authorized');
-        require(block.timestamp >= lastUserVote[_tokenId] + VoteDelay, 'Too early to change votes');
+    function reset(uint _tokenId) external lock notPaused onlyDepositer(_tokenId) voteDelay(_tokenId) {
         _reset(_tokenId);
         IV1Voter(_v1Voter).reset(_tokenId);
     }    
@@ -307,10 +317,8 @@ contract V2Voter is Pausable, IERC721Receiver {
     * - Will revert if the poolVotes don't match the weights
     * - Will revert if attempting to change the vote
     */
-    function vote(uint _tokenId, address[] calldata _poolVote, int256[] calldata _weights) external lock notPaused {
-        require(nftOwner[_tokenId] == msg.sender, 'Not Authorized');
+    function vote(uint _tokenId, address[] calldata _poolVote, int256[] calldata _weights) external lock notPaused onlyDepositer(_tokenId) voteDelay(_tokenId) {
         require(_poolVote.length == _weights.length, 'Invalid vote params');
-        require(block.timestamp >= lastUserVote[_tokenId] + VoteDelay, 'Too early to change votes');
         _vote(_tokenId, _poolVote, _weights);
         IV1Voter(_v1Voter).vote(_tokenId, _poolVote, _weights); 
     }
@@ -337,9 +345,7 @@ contract V2Voter is Pausable, IERC721Receiver {
     *  @dev Withdraws the NFT back to the owner
     *   - Votes needs to be reset before running
     */
-    function withdrawFromProxy(uint _tokenId) external lock notPaused {
-        require(nftOwner[_tokenId] == msg.sender, 'Not Authorized');
-        require(block.timestamp >= lastUserVote[_tokenId] + VoteDelay, 'Too early to withdraw');
+    function withdrawFromProxy(uint _tokenId) external lock notPaused onlyDepositer(_tokenId) voteDelay(_tokenId) {
         IVe(_ve).safeTransferFrom(address(this), msg.sender, _tokenId);
         nftOwner[_tokenId] = address(0);
         _removeTokenFromOwnerList(msg.sender, _tokenId);
@@ -349,8 +355,7 @@ contract V2Voter is Pausable, IERC721Receiver {
     /**
     *  @dev Claims bribes on behalf of the owner
     */
-    function claimBribes(uint _tokenId, address[] memory _tokens) public lock notPaused {
-        require(nftOwner[_tokenId] == msg.sender, 'Not Authorized');
+    function claimBribes(uint _tokenId, address[] memory _tokens) public lock notPaused onlyDepositer(_tokenId) {
         uint _poolCnt = poolVote[_tokenId].length;
         address[] memory _poolVote = poolVote[_tokenId];
         for (uint i = 0; i < _poolCnt; i++) {
