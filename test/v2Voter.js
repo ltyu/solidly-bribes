@@ -253,6 +253,10 @@ describe('V2Voter', () => {
       await expect(v2Voter.connect(owner).withdrawFromProxy(tokenId)).to.be.revertedWith('Not Authorized');
     });
 
+    it('should only allow withdraws after vote delay', async () => {
+      await expect(v2Voter.connect(owner2).withdrawFromProxy(tokenId)).to.be.revertedWith('Too early to change votes');
+    });
+
     it('should be able to withdraw an NFT after votes are reset', async () => {
       fastForward(10*DAY);
       await v2Voter.connect(owner2).reset(tokenId);
