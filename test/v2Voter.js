@@ -113,6 +113,73 @@ describe('V2Voter', () => {
     await expect(v2Voter.createBribe(firstV1Gauge)).to.be.revertedWith('Bribe already exists');
   });
   
+  describe('claim', () => {
+    let tokenId;
+    before(async () => {
+      // Lock another VE
+      await underlyingToken.connect(owner2).approve(ve.address, ethers.BigNumber.from('10000000000000000000000000'));
+      tokenId = await ve.connect(owner2).callStatic.create_lock(ethers.BigNumber.from('100000000000000000000000'), 4 * 365 * 86400);
+      await ve.connect(owner2).create_lock(ethers.BigNumber.from('100000000000000000000000'), 4 * 365 * 86400);
+      
+      // Authorize, transfer, and vote with VE
+      await ve.connect(owner2).setApprovalForAll(v2Voter.address, true);
+      await v2Voter.connect(owner2).transferToProxy(tokenId);
+      await v2Voter.connect(owner2).vote(tokenId, [firstPoolAddress], [150]); //owner2 can still vote
+
+      // Approve and notify bribe rewards
+      v2Bribe = await (await ethers.getContractFactory('V2Bribe')).attach(firstV2BribeAddress);
+      await underlyingToken.approve(v2Bribe.address, ethers.BigNumber.from('100000000000000000000000000'));
+      await mim.approve(v2Bribe.address, ethers.BigNumber.from('100000000000000000000000000'));
+      await ust.approve(v2Bribe.address, ethers.BigNumber.from('100000000000000000000000000'));
+
+    });
+
+    it('should only allow owners to claim', async () => {
+      await expect(v2Voter.connect(owner).claimBribes(tokenId, [underlyingToken.address])).to.revertedWith('Not Authorized');
+    });
+
+    it('should be able to claim a single bribe', async () => {
+      await v2Bribe.notifyRewardAmount(underlyingToken.address, ethers.BigNumber.from('700000000000000000000')) // 700
+      const initialEarned = await v2Bribe.connect(owner2).earned(underlyingToken.address, tokenId);
+      expect(initialEarned).to.be.eq(0);
+
+      await fastForward(7*DAY);
+
+      const preClaimEarned = await v2Bribe.connect(owner2).earned(underlyingToken.address, tokenId);
+      expect(initialEarned).to.be.lt(preClaimEarned);
+      
+      const preClaimBalance = await underlyingToken.balanceOf(owner2.address);
+      await v2Voter.connect(owner2).claimBribes(tokenId, [underlyingToken.address]);
+      const postClaimBalance = await underlyingToken.balanceOf(owner2.address);
+      const postClaimEarned = await v2Bribe.connect(owner2).earned(underlyingToken.address, tokenId);
+      expect(postClaimEarned).to.eq(0);
+      expect(postClaimBalance).to.gt(preClaimBalance);
+    });
+
+    it('should be able to claim multiple bribes', async () => {
+      const rewardAmount = ethers.BigNumber.from('700000000000000000000'); // 700 eth
+      await v2Bribe.notifyRewardAmount(mim.address, rewardAmount);
+      await v2Bribe.notifyRewardAmount(ust.address, rewardAmount);
+      await v2Bribe.notifyRewardAmount(ust.address, rewardAmount);
+      
+      const preClaimBalanceMim = await mim.balanceOf(owner2.address);
+      const preClaimBalanceUSt = await ust.balanceOf(owner2.address);
+      expect(preClaimBalanceMim).to.eq(0);
+      expect(preClaimBalanceUSt).to.eq(0);
+
+      await fastForward(8*DAY);      
+
+      await v2Voter.connect(owner2).claimBribes(tokenId, [mim.address, ust.address]);
+
+      const postClaimBalanceMim = await mim.balanceOf(owner2.address);
+      const postClaimBalanceUSt = await ust.balanceOf(owner2.address);
+      
+      expect(preClaimBalanceMim).to.be.lt(postClaimBalanceMim);
+      expect(preClaimBalanceUSt).to.be.lt(postClaimBalanceUSt);
+      expect(postClaimBalanceMim).to.be.closeTo(rewardAmount, 1000000); // some dust amount cant be claimed
+      expect(postClaimBalanceUSt).to.be.closeTo(rewardAmount.mul(2), 1000000); // mul(2) because we notifiedReward twice
+    });
+  });
 
   describe('vote', () => {
     const weights = [150, 50];
@@ -182,53 +249,28 @@ describe('V2Voter', () => {
 
     it('should keep track of the nft owners', async () => {
       const nftBalance = await v2Voter.balanceOf(owner2.address);
-      expect(nftBalance).to.equal(1);
+      expect(nftBalance).to.equal(2);
       expect(await v2Voter.nftOwner(tokenId)).to.equal(owner2.address);
       expect(await v2Voter.ownerToNFTokenIdList(owner2.address, nftBalance - 1)).to.equal(tokenId);
     });
+
+    it('should require the vote delay to pass before vote is reset-able', async () => {
+      const usedWeights = await voter.connect(owner2).usedWeights(tokenId);
+      const v2UsedWeights = await v2Voter.connect(owner2).usedWeights(tokenId);
+      fastForward(7*DAY);
+      await expect(v2Voter.connect(owner2).reset(tokenId)).to.be.revertedWith('Too early to change votes');
+      fastForward(3*DAY);
+      await v2Voter.connect(owner2).reset(tokenId);
+      const postUsedWeights = await voter.connect(owner2).usedWeights(tokenId);
+      const v2PostUsedWeights = await v2Voter.connect(owner2).usedWeights(tokenId);
+  
+      expect(usedWeights).to.eq(v2UsedWeights);
+      expect(postUsedWeights).to.eq(v2PostUsedWeights);
+      expect(postUsedWeights).to.eq(0);
+      expect(postUsedWeights).to.be.lt(usedWeights);
+    });
   });
 
-  describe('claim', () => {
-    let tokenId;
-    before(async () => {
-      // Lock another VE
-      await underlyingToken.connect(owner2).approve(ve.address, ethers.BigNumber.from('10000000000000000000000000'));
-      tokenId = await ve.connect(owner2).callStatic.create_lock(ethers.BigNumber.from('100000000000000000000000'), 4 * 365 * 86400);
-      await ve.connect(owner2).create_lock(ethers.BigNumber.from('100000000000000000000000'), 4 * 365 * 86400);
-      
-      // Authorize, transfer, and vote with VE
-      await ve.connect(owner2).setApprovalForAll(v2Voter.address, true);
-      await v2Voter.connect(owner2).transferToProxy(tokenId);
-      await v2Voter.connect(owner2).vote(tokenId, [firstPoolAddress], [150]); //owner2 can still vote
-
-      // Approve and notify bribe rewards
-      v2Bribe = await (await ethers.getContractFactory('V2Bribe')).attach(firstV2BribeAddress);
-      await underlyingToken.approve(v2Bribe.address, ethers.BigNumber.from('100000000000000000000000000'));
-      await v2Bribe.notifyRewardAmount(underlyingToken.address, ethers.BigNumber.from('700000000000000000000')) // 700
-    });
-
-    it('should be able to claim bribes', async () => {
-      const initialEarned = await v2Bribe.connect(owner2).earned(underlyingToken.address, tokenId);
-      expect(initialEarned).to.be.eq(0);
-
-      await fastForward(7*DAY);
-
-      const preClaimEarned = await v2Bribe.connect(owner2).earned(underlyingToken.address, tokenId);
-      expect(initialEarned).to.be.lt(preClaimEarned);
-      
-      const preClaimBalance = await underlyingToken.balanceOf(owner2.address);
-      await v2Voter.connect(owner2).claimBribes(tokenId, [underlyingToken.address]);
-      const postClaimBalance = await underlyingToken.balanceOf(owner2.address);
-      const postClaimEarned = await v2Bribe.connect(owner2).earned(underlyingToken.address, tokenId);
-      expect(postClaimEarned).to.eq(0);
-      expect(postClaimBalance).to.gt(preClaimBalance);
-    });
-
-    it('should only allow owners to claim', async () => {
-      await expect(v2Voter.connect(owner).claimBribes(tokenId, [underlyingToken.address])).to.revertedWith('Not Authorized');
-    });
-
-  });
 
   describe('withdrawFromProxy', () => {
     let tokenId;
@@ -246,22 +288,14 @@ describe('V2Voter', () => {
       // Approve and notify bribe rewards
       v2Bribe = await (await ethers.getContractFactory('V2Bribe')).attach(firstV2BribeAddress);
       await underlyingToken.approve(v2Bribe.address, ethers.BigNumber.from('100000000000000000000000000'));
-      await v2Bribe.notifyRewardAmount(underlyingToken.address, ethers.BigNumber.from('700000000000000000000')) // 700
+      await v2Bribe.notifyRewardAmount(underlyingToken.address, ethers.BigNumber.from('70000000000000000000000')) // 700
     });
 
-    it('should only allow the owner to withdraw', async () => {
-      await expect(v2Voter.connect(owner).withdrawFromProxy(tokenId)).to.be.revertedWith('Not Authorized');
-    });
-
-    it('should only allow withdraws after vote delay', async () => {
-      await expect(v2Voter.connect(owner2).withdrawFromProxy(tokenId)).to.be.revertedWith('Too early to change votes');
-    });
-
+    xit('should prevent someone to keep adding too much rewards in a signle day');
     it('should be able to withdraw an NFT after votes are reset', async () => {
       fastForward(10*DAY);
       await v2Voter.connect(owner2).reset(tokenId);
       await v2Voter.connect(owner2).withdrawFromProxy(tokenId);
-
       expect(await ve.isApprovedOrOwner(v2Voter.address, tokenId)).to.be.equal(true);
       expect(await ve.isApprovedOrOwner(owner2.address, tokenId)).to.be.equal(true);
       expect(await v2Voter.nftOwner(tokenId)).to.equal(ethers.constants.AddressZero);
@@ -279,41 +313,14 @@ describe('V2Voter', () => {
       expect(await v2Voter.nftOwner(tokenId)).to.equal(ethers.constants.AddressZero);
       expect(await v2Voter.ownerToNFTokenIdList(owner2.address, nftBalance)).to.equal(0);
     });
-  });
 
-  describe('reset', () => {
-    let tokenId;
-    before(async () => {
-      // Lock another VE
-      await underlyingToken.connect(owner2).approve(ve.address, ethers.BigNumber.from('10000000000000000000000000'));
-      tokenId = await ve.connect(owner2).callStatic.create_lock(ethers.BigNumber.from('100000000000000000000000'), 4 * 365 * 86400);
-      await ve.connect(owner2).create_lock(ethers.BigNumber.from('100000000000000000000000'), 4 * 365 * 86400);
-      
-      // Authorize, transfer, and vote with VE
-      await ve.connect(owner2).setApprovalForAll(v2Voter.address, true);
-      await v2Voter.connect(owner2).transferToProxy(tokenId);
-      await v2Voter.connect(owner2).vote(tokenId, [firstPoolAddress], [150]); //owner2 can still vote
-
-      // Approve and notify bribe rewards
-      v2Bribe = await (await ethers.getContractFactory('V2Bribe')).attach(firstV2BribeAddress);
-      await underlyingToken.approve(v2Bribe.address, ethers.BigNumber.from('100000000000000000000000000'));
-      await v2Bribe.notifyRewardAmount(underlyingToken.address, ethers.BigNumber.from('700000000000000000000')) // 700
+    it('should only allow the owner to withdraw', async () => {
+      await expect(v2Voter.connect(owner).withdrawFromProxy(tokenId)).to.be.revertedWith('Not Authorized');
     });
 
-    it('should require the vote delay to pass before resetting', async () => {
-      const usedWeights = await voter.connect(owner2).usedWeights(tokenId);
-      const v2UsedWeights = await v2Voter.connect(owner2).usedWeights(tokenId);
-      fastForward(7*DAY);
-      await expect(v2Voter.connect(owner2).reset(tokenId)).to.be.revertedWith('Too early to change votes');
-      fastForward(3*DAY);
-      await v2Voter.connect(owner2).reset(tokenId);
-      const postUsedWeights = await voter.connect(owner2).usedWeights(tokenId);
-      const v2PostUsedWeights = await v2Voter.connect(owner2).usedWeights(tokenId);
-
-      expect(usedWeights).to.eq(v2UsedWeights);
-      expect(postUsedWeights).to.eq(v2PostUsedWeights);
-      expect(postUsedWeights).to.eq(0);
-      expect(postUsedWeights).to.be.lt(usedWeights);
+    it('should only allow withdraws after vote delay', async () => {
+      await expect(v2Voter.connect(owner2).withdrawFromProxy(tokenId)).to.be.revertedWith('Too early to change votes');
     });
+
   });
 });
