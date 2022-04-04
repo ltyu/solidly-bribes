@@ -12,3 +12,5 @@ BribeV2-bribes
 * Used to keep track of how much veSolid holders earned when they withdraw
 * Drips rewards out throughout the week
 
+Migration
+* Since V2 voting will require V2 bribes to be created for existing pairs **migration.js** will need to be run. The script should create a V2 bribe for existing pairs. In the future, new pairs created will have V2 bribe created when adding liquidity on the frontend.
