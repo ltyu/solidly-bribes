@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.11;
 import './Pausable.sol';
+
 /**
 * @title ERC721 token receiver interface
 * @dev Interface for any contract that wants to support safeTransfers
@@ -114,7 +115,7 @@ contract V2Voter is Pausable, IERC721Receiver {
 
     event Abstained(uint tokenId, int256 weight);
     event Voted(address indexed voter, uint tokenId, int256 weight);
-    event BribesClaimed(uint _tokenId, address[] _tokens);
+    event BribesClaimed(uint _tokenId, address[] bribes);
     event V2BribeCreated(address bribe);
     event WithdrawNFT(uint _tokenId);
 
@@ -355,16 +356,11 @@ contract V2Voter is Pausable, IERC721Receiver {
     /**
     *  @dev Claims bribes on behalf of the owner
     */
-    function claimBribes(uint _tokenId, address[] memory _tokens) public lock notPaused onlyDepositer(_tokenId) {
-        uint _poolCnt = poolVote[_tokenId].length;
-        address[] memory _poolVote = poolVote[_tokenId];
-        for (uint i = 0; i < _poolCnt; i++) {
-            address _pool = _poolVote[i];
-            address _gauge = IV1Voter(_v1Voter).gauges(_pool);
-            address _bribe = bribes[_gauge];
-            IV2Bribe(_bribe)._getRewardsForOwner(_tokenId, msg.sender, _tokens);
+    function claimBribes(uint _tokenId, address[] memory _bribes, address[][] memory _tokens) public lock notPaused onlyDepositer(_tokenId) {
+        for (uint i = 0; i < _bribes.length; i++) {
+            IV2Bribe(_bribes[i])._getRewardsForOwner(_tokenId, msg.sender, _tokens[i]);
         }
-        emit BribesClaimed(_tokenId, _tokens);
+        emit BribesClaimed(_tokenId, _bribes);
     }
 
     /**
