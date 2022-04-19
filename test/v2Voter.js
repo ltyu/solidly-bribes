@@ -131,11 +131,10 @@ describe('V2Voter', () => {
       await underlyingToken.approve(v2Bribe.address, ethers.BigNumber.from('100000000000000000000000000'));
       await mim.approve(v2Bribe.address, ethers.BigNumber.from('100000000000000000000000000'));
       await ust.approve(v2Bribe.address, ethers.BigNumber.from('100000000000000000000000000'));
-
     });
 
     it('should only allow owners to claim', async () => {
-      await expect(v2Voter.connect(owner).claimBribes(tokenId, [underlyingToken.address])).to.revertedWith('Not Authorized');
+      await expect(v2Voter.connect(owner).claimBribes(tokenId, [v2Bribe.address], [[underlyingToken.address]])).to.revertedWith('Not Authorized');
     });
 
     it('should be able to claim a single bribe', async () => {
@@ -149,7 +148,7 @@ describe('V2Voter', () => {
       expect(initialEarned).to.be.lt(preClaimEarned);
       
       const preClaimBalance = await underlyingToken.balanceOf(owner2.address);
-      await v2Voter.connect(owner2).claimBribes(tokenId, [underlyingToken.address]);
+      await v2Voter.connect(owner2).claimBribes(tokenId, [v2Bribe.address], [[underlyingToken.address]]);
       const postClaimBalance = await underlyingToken.balanceOf(owner2.address);
       const postClaimEarned = await v2Bribe.connect(owner2).earned(underlyingToken.address, tokenId);
       expect(postClaimEarned).to.eq(0);
@@ -169,7 +168,7 @@ describe('V2Voter', () => {
 
       await fastForward(8*DAY);      
 
-      await v2Voter.connect(owner2).claimBribes(tokenId, [mim.address, ust.address]);
+      await v2Voter.connect(owner2).claimBribes(tokenId, [v2Bribe.address], [[mim.address, ust.address]]);
 
       const postClaimBalanceMim = await mim.balanceOf(owner2.address);
       const postClaimBalanceUSt = await ust.balanceOf(owner2.address);
@@ -292,14 +291,15 @@ describe('V2Voter', () => {
     });
 
     xit('should prevent someone to keep adding too much rewards in a signle day');
-    it('should be able to withdraw an NFT after votes are reset', async () => {
+    it('should reset v1 voter, v2 voter, and v2 bribe votes after withdraw', async () => {
       fastForward(10*DAY);
-      await v2Voter.connect(owner2).reset(tokenId);
+      expect(await v2Bribe.balanceOf(tokenId)).to.be.gt(0)
       await v2Voter.connect(owner2).withdrawFromProxy(tokenId);
       expect(await ve.isApprovedOrOwner(v2Voter.address, tokenId)).to.be.equal(true);
       expect(await ve.isApprovedOrOwner(owner2.address, tokenId)).to.be.equal(true);
       expect(await v2Voter.nftOwner(tokenId)).to.equal(ethers.constants.AddressZero);
-      await expect(v2Voter.connect(owner2).claimBribes(tokenId, [underlyingToken.address])).to.revertedWith('Not Authorized');
+      await expect(v2Voter.connect(owner2).claimBribes(tokenId, [v2Bribe.address], [[underlyingToken.address]])).to.revertedWith('Not Authorized');
+      expect(await v2Bribe.balanceOf(tokenId)).to.be.eq(0)
     });
 
     it('should keep track of the nft owners', async () => {

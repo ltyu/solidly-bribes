@@ -140,7 +140,7 @@ contract V2Voter is Pausable, IERC721Receiver {
         _;
     }
 
-    // Checks if an nft has been deposited
+    // Checks if sender is the owner of the nft
     modifier onlyDepositer(uint _tokenId) {
         require(nftOwner[_tokenId] == msg.sender, 'Not Authorized');
         _;
@@ -165,7 +165,8 @@ contract V2Voter is Pausable, IERC721Receiver {
 
     /**
     * @dev Internal function used to proxy vote for a pool. 
-    * It calls _deposit on the V2Bribes to keep track of votes for reward calculation.
+    * - It calls _deposit on the V2Bribes to keep track of votes for reward calculation.
+    * - Verifies if a pools provided have gauges
     */
     function _vote(uint _tokenId, address[] memory _poolVote, int256[] memory _weights) internal {
         _reset(_tokenId);
@@ -297,7 +298,7 @@ contract V2Voter is Pausable, IERC721Receiver {
     /**
     * @dev Resets the votes on v1 and v2 Voter.
     */
-    function reset(uint _tokenId) external lock notPaused onlyDepositer(_tokenId) voteDelay(_tokenId) {
+    function reset(uint _tokenId) public lock notPaused onlyDepositer(_tokenId) voteDelay(_tokenId) {
         _reset(_tokenId);
         IV1Voter(_v1Voter).reset(_tokenId);
     }    
@@ -307,9 +308,9 @@ contract V2Voter is Pausable, IERC721Receiver {
     */
     function transferToProxy(uint _tokenId) external lock notPaused {
         require(IVe(_ve).isApprovedOrOwner(msg.sender, _tokenId), 'Not Authorized');
-        IVe(_ve).safeTransferFrom(msg.sender, address(this), _tokenId);
         nftOwner[_tokenId] = msg.sender;
         _addTokenToOwnerList(msg.sender, _tokenId);
+        IVe(_ve).safeTransferFrom(msg.sender, address(this), _tokenId);
     }
 
     /**
@@ -344,12 +345,13 @@ contract V2Voter is Pausable, IERC721Receiver {
 
     /**
     *  @dev Withdraws the NFT back to the owner
-    *   - Votes needs to be reset before running
+    *   - Resets the votes on both v1 and v2
     */
-    function withdrawFromProxy(uint _tokenId) external lock notPaused onlyDepositer(_tokenId) voteDelay(_tokenId) {
-        IVe(_ve).safeTransferFrom(address(this), msg.sender, _tokenId);
+    function withdrawFromProxy(uint _tokenId) external notPaused onlyDepositer(_tokenId) voteDelay(_tokenId) {
         nftOwner[_tokenId] = address(0);
-        _removeTokenFromOwnerList(msg.sender, _tokenId);
+        reset(_tokenId);
+        IV1Voter(_v1Voter).reset(_tokenId);
+        IVe(_ve).safeTransferFrom(address(this), msg.sender, _tokenId);
         emit WithdrawNFT(_tokenId);
     }
 

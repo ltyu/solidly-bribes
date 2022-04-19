@@ -4,8 +4,8 @@ async function main() {
     const [owner, owner2] = await ethers.getSigners();
     const Token = await ethers.getContractFactory('Token');
     // Create and approve some token
-    ust = await Token.deploy('UST', 'UST', 6, owner.address);
-    mim = await Token.deploy('MIM', 'MIM', 6, owner.address);
+    ust = await Token.deploy('UST', 'UST', 18, owner.address);
+    mim = await Token.deploy('MIM', 'MIM', 18, owner.address);
     await ust.mint(owner.address, ethers.BigNumber.from('1000000000000000000000000000000'));
     await mim.mint(owner.address, ethers.BigNumber.from('1000000000000000000000000000000'));
     const ust_1 = ethers.BigNumber.from('700000000000000000000');
